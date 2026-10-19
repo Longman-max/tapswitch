@@ -3,7 +3,7 @@
 A virtual Ethernet switch over UDP, built from scratch to learn how layer 2 works.
 
 ## Status
-Phase 1: frame parsing and MAC table.
+Phase 2: the UDP switch loop (learn, forward, flood).
 
 ## Run the tests
     python -m unittest discover -s tests -v
@@ -12,3 +12,12 @@ Phase 1: frame parsing and MAC table.
 - Why a switch learns from the source MAC
 - Why unknown destinations get flooded
 - Why TAP and not TUN
+
+## Try it (Phase 2)
+Terminal 1: `python vswitch.py`
+
+Then, in other terminals (each listens for 15 seconds):
+
+    python fake_client.py 10003 02:00:00:00:00:0c
+    python fake_client.py 10002 02:00:00:00:00:0b 02:00:00:00:00:0a "hi A"
+    python fake_client.py 10001 02:00:00:00:00:0a 02:00:00:00:00:0b "hi B"

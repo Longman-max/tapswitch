@@ -1,8 +1,11 @@
 """tapswitch - the switch (server side).
 
-Phase 1: frame parsing and the MAC table. No networking yet.
+Phase 1: frame parsing and the MAC table.
+Phase 2: the UDP loop that learns, forwards and floods.
 """
 
+import socket
+import sys
 import time
 
 ETH_HEADER_LEN = 14
@@ -57,3 +60,54 @@ class MacTable:
 
     def ports(self) -> set:
         return {port for port, _ in self._entries.values()}
+
+
+def handle(table: MacTable, dst: bytes, src: bytes, ingress, now: float = None):
+    """Learn the sender, then decide where the frame goes.
+
+    Returns (reason, set of ports to send to).
+    """
+    table.learn(src, ingress, now)
+
+    if is_group(dst):
+        return "broadcast flood", table.ports() - {ingress}
+
+    port = table.lookup(dst, now)
+    if port is None:
+        return "unknown flood", table.ports() - {ingress}
+    if port == ingress:
+        return "filtered", set()
+    return "forward", {port}
+
+
+def serve(host: str = "127.0.0.1", port: int = 9999) -> None:
+    table = MacTable()
+    with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sock:
+        sock.bind((host, port))
+        print(f"tapswitch listening on {host}:{port} (Ctrl+C to stop)")
+        try:
+            while True:
+                frame, ingress = sock.recvfrom(2048)
+                try:
+                    dst, src, _ = parse_frame(frame)
+                except ValueError as err:
+                    print(f"drop {ingress[0]}:{ingress[1]}  {err}")
+                    continue
+
+                reason, targets = handle(table, dst, src, ingress)
+                print(
+                    f"rx {ingress[0]}:{ingress[1]}  "
+                    f"{format_mac(src)} -> {format_mac(dst)}  "
+                    f"{reason}  ({len(targets)} port(s))"
+                )
+                for target in targets:
+                    try:
+                        sock.sendto(frame, target)
+                    except OSError as err:
+                        print(f"send to {target} failed: {err}")
+        except KeyboardInterrupt:
+            print("\nstopping")
+
+
+if __name__ == "__main__":
+    serve(port=int(sys.argv[1]) if len(sys.argv) > 1 else 9999)
